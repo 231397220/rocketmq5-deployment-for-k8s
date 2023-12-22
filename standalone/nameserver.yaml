@@ -1,0 +1,116 @@
+#创建命名空间
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rocketmq
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-nameserver
+  namespace: rocketmq
+spec:
+  type: ClusterIP
+  ports:
+    - name: nameserver
+      protocol: TCP
+      port: 9876
+      targetPort: 9876
+  selector:
+    app: rocketmq-nameserver
+
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: rocketmq-nameserver
+  namespace: rocketmq
+  labels:
+    app: rocketmq-nameserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rocketmq-nameserver
+  template:
+    metadata:
+      labels:
+        app: rocketmq-nameserver
+    spec:
+      containers:
+        - name: rocketmqnamesvr
+          image: 'apache/rocketmq:5.1.4'
+          args: [
+           'sh',
+            '-c',
+            'sh mqnamesrv',
+          ]
+          ports:
+            - name: tcp-10909
+              containerPort: 10909
+              protocol: TCP
+            - name: tcp-10911
+              containerPort: 10911
+              protocol: TCP
+            - name: tcp-10912
+              containerPort: 10912
+              protocol: TCP
+            - name: tcp-9876
+              containerPort: 9876
+              protocol: TCP
+          resources:
+            limits:
+              cpu: '4'
+              memory: 4Gi
+            requests:
+              cpu: 500m
+              memory: 256Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 9876
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 9876
+            timeoutSeconds: 1
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      serviceAccountName: default
+      serviceAccount: default
+      securityContext: {}
+      schedulerName: default-scheduler
+  serviceName: rocketmq-nameserver-s0rl
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  revisionHistoryLimit: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-nameserver-nodeport
+  namespace: rocketmq
+spec:
+  type: NodePort
+  ports:
+    - name: nameserver
+      protocol: TCP
+      port: 9876
+      targetPort: 9876
+      nodePort: 30076  # 指定的外部端口，范围通常在 30000-32767 之间
+  selector:
+    app: rocketmq-nameserver

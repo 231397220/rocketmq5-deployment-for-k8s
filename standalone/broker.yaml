@@ -1,0 +1,139 @@
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-broker
+  namespace: rocketmq
+spec:
+  type: ClusterIP
+  ports:
+    - name: consumer
+      protocol: TCP
+      port: 10909
+      targetPort: 10909
+    - name: producker
+      protocol: TCP
+      port: 10911
+      targetPort: 10911
+  selector:
+    app: rocketmq-broker
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: rocketmq-broker
+  namespace: rocketmq
+  labels:
+    app: rocketmq-broker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rocketmq-broker
+  template:
+    metadata:
+      labels:
+        app: rocketmq-broker
+    spec:
+      initContainers:
+        - name: volume-permissions
+          image: busybox
+          command: ['sh', '-c', 'chown -R 3000:3000 /home/rocketmq/store/']
+          volumeMounts:
+          - name: broker-store
+            mountPath: /home/rocketmq/store/
+      containers:
+        - name: rocketmqbroker
+          image: 'apache/rocketmq:5.1.4'
+          env:
+          - name: BROKER_ID
+            value: "0" # 默认设置为 0，适用于 Master 节点
+          - name: BROKER_ROLE
+            value: "SYNC_MASTER" 
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              sh mqbroker -n rocketmq-nameserver:9876 --enable-proxy
+          ports:
+            - name: tcp-10909
+              containerPort: 10909
+              protocol: TCP
+            - name: tcp-10911
+              containerPort: 10911
+              protocol: TCP
+            - name: tcp-10912
+              containerPort: 10912
+              protocol: TCP
+            - name: tcp-9876
+              containerPort: 9876
+              protocol: TCP
+          volumeMounts:
+          - name: broker-config
+            mountPath: /home/rocketmq/rocketmq-5.1.4/conf/broker.conf
+            subPath: broker.conf
+          - name: broker-store
+            mountPath: /home/rocketmq/store/
+            subPath: /home/rocketmq/store/
+          resources:
+            limits:
+              cpu: '8'
+              memory: 16Gi
+            requests:
+              cpu: 500m
+              memory: 12Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 10911
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 10911
+            timeoutSeconds: 1
+      restartPolicy: Always
+      volumes:
+      - name: broker-config
+        configMap:
+          name: rocketmq-broker-config
+      - name: broker-store
+        persistentVolumeClaim:
+          claimName: rockermq-broker-master-a
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      serviceAccountName: default
+      serviceAccount: default
+      securityContext: {}
+      schedulerName: default-scheduler
+  serviceName: rocketmq-broker-s0rl
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  revisionHistoryLimit: 10
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocketmq-broker-config
+  namespace: rocketmq
+data:
+  broker.conf: |
+    brokerClusterName = DefaultCluster
+    brokerName = borker-master-a
+    brokerId = ${BROKER_ID}
+    deleteWhen = 04
+    fileReservedTime = 48
+    brokerRole = ${BROKER_ROLE}
+    flushDiskType = SYNC_FLUSH
+    storePathCommitLog=/home/rocketmq/store/commitlog
+    storePathConsumerQueue=/home/rocketmq/store/consumequeue
