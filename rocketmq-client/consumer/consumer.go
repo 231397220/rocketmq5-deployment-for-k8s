@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
+	"strings"
 
 	"github.com/apache/rocketmq-client-go/v2"
 	"github.com/apache/rocketmq-client-go/v2/consumer"
@@ -22,7 +22,7 @@ func main() {
 	flag.Parse()
 
 	c, err := rocketmq.NewPushConsumer(
-		consumer.WithNameServer([]string{nameServer}),
+		consumer.WithNameServer(strings.Split(nameServer, ",")),
 		consumer.WithGroupName(group),
 		consumer.WithConsumerModel(consumer.Clustering),
 	)
@@ -31,11 +31,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = c.Subscribe(topic, consumer.MessageSelector{}, func(ctx context.Context,
-		msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
-		for i := range msgs {
-			// 打印消息内容到屏幕
-			fmt.Printf("Received message: Topic=%s, Body=%s\n", msgs[i].Topic, string(msgs[i].Body))
+	err = c.Subscribe(topic, consumer.MessageSelector{}, func(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+		for _, msg := range msgs {
+		fmt.Printf("Received message: Topic=%s, Body=%s, Offset=%d\n", msg.Topic, string(msg.Body), msg.QueueOffset)
 		}
 		return consumer.ConsumeSuccess, nil
 	})
@@ -45,15 +43,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 启动消费者
 	err = c.Start()
 	if err != nil {
 		fmt.Printf("start consumer error: %s\n", err.Error())
 		os.Exit(1)
 	}
-	time.Sleep(time.Minute * 10) // 保持消费者运行一段时间
-	err = c.Shutdown()
-	if err != nil {
-		fmt.Printf("shutdown consumer error: %s\n", err.Error())
-	}
+
+	// 为了保持程序运行，您可能需要添加逻辑来避免程序直接退出
+	select {} // 无限等待，防止主 goroutine 退出
 }
